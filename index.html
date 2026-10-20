@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>בדיקת מכשירי נהגים</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&family=Assistant:wght@400;500;600&display=swap">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  :root{color-scheme:light; padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+  img{max-width:100%}
+  [hidden]{display:none!important}
+
+  /* Layout: one centered card column; driver view = greeting + device panel + auto-send status (or WhatsApp button fallback); manager view = endpoint + number + names form -> generated per-driver links. RTL, Hebrew. */
+  :root{
+    --bg:#eef2f5; --surface:#ffffff; --surface-2:#f4f7f9;
+    --fg:#16202a; --muted:#5b6b78; --line:#dce4ea;
+    --accent:#0f8a86; --accent-2:#0b6f6c; --accent-ink:#ffffff;
+    --ok:#1a7f5a; --ok-bg:#e6f5ee; --wa:#25a85a; --wa-ink:#ffffff;
+    --shadow:0 1px 2px rgba(16,32,42,.05), 0 8px 24px rgba(16,32,42,.07);
+    --radius:16px;
+    --font-display:'Rubik', system-ui, -apple-system, sans-serif;
+    --font-body:'Assistant', system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --bg:#0d1417; --surface:#161f25; --surface-2:#1b262c;
+    --fg:#e7eef1; --muted:#9fb0b8; --line:#26343b;
+    --accent:#2bb3ad; --accent-2:#36c4be; --accent-ink:#04201f;
+    --ok:#4cc08a; --ok-bg:#132a20; --wa:#2bc566; --wa-ink:#052615;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0d1417; --surface:#161f25; --surface-2:#1b262c;
+    --fg:#e7eef1; --muted:#9fb0b8; --line:#26343b;
+    --accent:#2bb3ad; --accent-2:#36c4be; --accent-ink:#04201f;
+    --ok:#4cc08a; --ok-bg:#132a20; --wa:#2bc566; --wa-ink:#052615;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:var(--font-body); font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    direction:rtl;
+    max-width:600px; margin-inline:auto;
+    padding-left:max(16px, env(safe-area-inset-left, 0px));
+    padding-right:max(16px, env(safe-area-inset-right, 0px));
+    padding-block:28px 40px;
+    display:flex; flex-direction:column; gap:18px;
+  }
+
+  .brand{display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.82rem; letter-spacing:.02em}
+  .brand .dot{width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none}
+  .brand b{color:var(--fg); font-family:var(--font-display); font-weight:600; letter-spacing:0}
+
+  .card{
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:var(--shadow);
+    padding:22px; display:flex; flex-direction:column; gap:16px;
+  }
+
+  h1{font-family:var(--font-display); font-weight:600; font-size:1.5rem; margin:0; letter-spacing:-.01em; text-wrap:balance}
+  .lead{margin:0; color:var(--muted); font-size:1rem}
+  .lead b{color:var(--fg); font-weight:600}
+
+  .status{display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.95rem}
+  .spin{width:16px; height:16px; border-radius:50%; border:2.5px solid var(--line); border-top-color:var(--accent); animation:sp .8s linear infinite; flex:none}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ .spin{animation:none} }
+
+  .checking{display:flex; flex-direction:column; align-items:center; gap:16px; padding:48px 24px 44px; text-align:center}
+  .spin.big{width:42px; height:42px; border-width:3.5px}
+  .checking-tx{color:var(--muted); font-size:1.05rem; font-family:var(--font-display); font-weight:500}
+  .result{align-items:center; text-align:center; gap:15px; padding:40px 26px 42px}
+  .result-ic{width:84px; height:84px; border-radius:50%; background:var(--ok); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 26px rgba(26,127,90,.32)}
+  .result-ic svg{width:44px; height:44px}
+  .result-ic.info{background:var(--muted); box-shadow:none}
+  .err404{font-family:var(--font-display); font-weight:700; font-size:4.4rem; line-height:1; color:var(--muted); letter-spacing:.05em; opacity:.6}
+  .result-h{font-size:1.7rem}
+  .result-p{color:var(--muted); font-size:1.06rem; margin:0; line-height:1.6}
+
+  .done{display:flex; align-items:center; gap:11px; background:var(--ok-bg); border:1px solid color-mix(in srgb, var(--ok) 35%, transparent); border-radius:12px; padding:13px 15px}
+  .done .ic{width:26px; height:26px; border-radius:50%; background:var(--ok); color:#fff; display:flex; align-items:center; justify-content:center; flex:none}
+  .done .ic svg{width:15px; height:15px}
+  .done .tx{font-family:var(--font-display); font-weight:600; color:var(--fg)}
+  .done .tx small{display:block; font-family:var(--font-body); font-weight:400; color:var(--muted); font-size:.82rem; margin-top:1px}
+
+  .fields{display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden}
+  .row{display:flex; justify-content:space-between; align-items:baseline; gap:14px; background:var(--surface); padding:12px 14px}
+  .row .k{color:var(--muted); font-size:.9rem; flex:none}
+  .row .v{font-family:var(--font-display); font-weight:500; text-align:left; min-width:0; overflow-wrap:anywhere; font-variant-numeric:tabular-nums}
+  .row .v.dim{color:var(--muted); font-weight:400}
+  .row .v .sub{display:block; font-family:var(--font-body); font-weight:400; font-size:.76rem; color:var(--muted); margin-top:1px; letter-spacing:.02em}
+
+  .preview-wrap{display:flex; flex-direction:column; gap:8px}
+  .preview-label{display:flex; align-items:center; gap:7px; color:var(--muted); font-size:.82rem; letter-spacing:.03em; text-transform:uppercase}
+  .preview-label svg{width:14px; height:14px}
+  .preview{background:var(--surface-2); border:1px dashed var(--line); border-radius:12px; padding:14px; font-size:.92rem; white-space:pre-wrap; overflow-wrap:anywhere; font-family:var(--font-body); color:var(--fg)}
+
+  .note{font-size:.85rem; color:var(--muted); margin:0; display:flex; gap:8px; align-items:flex-start}
+  .note svg{width:15px; height:15px; flex:none; margin-top:2px; color:var(--accent)}
+
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:9px; font-family:var(--font-display); font-weight:600; font-size:1.02rem; border:none; border-radius:12px; padding:14px 18px; cursor:pointer; text-decoration:none; width:100%; transition:transform .05s ease, filter .15s ease, opacity .15s}
+  .btn:active{transform:translateY(1px)}
+  .btn svg{width:20px; height:20px; flex:none}
+  .btn.wa{background:var(--wa); color:var(--wa-ink)}
+  .btn.wa:hover{filter:brightness(1.04)}
+  .btn.primary{background:var(--accent); color:var(--accent-ink)}
+  .btn.primary:hover{filter:brightness(1.05)}
+  .btn.ghost{background:transparent; color:var(--accent); border:1px solid var(--line); font-weight:500}
+  .btn.ghost:hover{background:var(--surface-2)}
+  .btn[aria-disabled="true"]{opacity:.5; pointer-events:none}
+  .btn.sm{width:auto; padding:9px 14px; font-size:.9rem}
+
+  .foot{display:flex; justify-content:center; padding-top:2px}
+  .link{background:none; border:none; color:var(--muted); font-family:var(--font-body); font-size:.85rem; cursor:pointer; text-decoration:underline; text-underline-offset:3px}
+  .link:hover{color:var(--accent)}
+
+  label.fl{display:flex; flex-direction:column; gap:6px; font-size:.9rem; color:var(--fg); font-weight:600}
+  label.fl .hint{font-weight:400; color:var(--muted); font-size:.82rem}
+  input[type=text], input[type=tel], input[type=url], textarea{font-family:var(--font-body); font-size:1rem; color:var(--fg); background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:11px 13px; width:100%; direction:ltr; text-align:right}
+  input[type=url]{text-align:left}
+  input::placeholder, textarea::placeholder{color:var(--muted); opacity:.8}
+  textarea{min-height:110px; resize:vertical; direction:rtl; text-align:right; line-height:1.7}
+  input:focus-visible, textarea:focus-visible, .btn:focus-visible, .link:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .cc{display:flex; gap:8px}
+  .cc input.code{flex:none; width:92px; direction:ltr; text-align:center}
+  .normalized{font-size:.82rem; color:var(--muted); min-height:1.1em}
+  .normalized b{color:var(--ok); font-family:var(--font-display); font-variant-numeric:tabular-nums; direction:ltr; unicode-bidi:plaintext}
+  .badge{display:inline-flex; align-items:center; gap:6px; font-size:.78rem; font-weight:600; padding:3px 9px; border-radius:999px; font-family:var(--font-display)}
+  .badge.on{background:var(--ok-bg); color:var(--ok)}
+  .badge.off{background:var(--surface-2); color:var(--muted); border:1px solid var(--line)}
+
+  .links-head{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap}
+  .links-head h2{font-family:var(--font-display); font-weight:600; font-size:1.1rem; margin:0}
+  .driver{display:flex; flex-direction:column; gap:9px; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding:13px 14px}
+  .driver .dn{font-family:var(--font-display); font-weight:600}
+  .driver .dn-ph{font-family:var(--font-body); font-weight:400; color:var(--muted); font-size:.85em}
+  .driver .url{font-size:.78rem; color:var(--muted); direction:ltr; text-align:left; overflow-wrap:anywhere; background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:8px 10px}
+  .driver .acts{display:flex; gap:8px; flex-wrap:wrap}
+  .empty{color:var(--muted); font-size:.9rem; text-align:center; padding:18px}
+
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(20px + env(safe-area-inset-bottom,0px)); background:var(--fg); color:var(--bg); font-family:var(--font-display); font-weight:500; font-size:.9rem; padding:10px 16px; border-radius:999px; box-shadow:var(--shadow); opacity:0; transition:opacity .2s, transform .2s; pointer-events:none; z-index:20}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-2px)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand" id="brand"><span class="dot"></span><span id="brandtx">בדיקת מכשירי נהגים · <b>הסידור</b></span></div>
+  <div id="app"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ===== link version — bump this to kill ALL previously-sent links at once =====
+   כל קישור שנוצר נושא את החותמת הזו. קישור ישן (בלי החותמת / עם ישנה) מוביל ל-404.
+   כדי לבטל שוב בעתיד את כל הקישורים — פשוט שנה את המספר כאן (ל-"3" וכו'). */
+const LINK_VERSION = "2";
+
+/* ===== known device model codes -> retail name (extend as needed; unknown codes show the raw code) ===== */
+const MODEL_NAMES = {
+  "2412DPC0AG": "POCO X7 Pro"
+};
+function prettyModel(code){
+  if(!code) return { name:'', code:'' };
+  const hit = MODEL_NAMES[code.trim()] || MODEL_NAMES[code.trim().toUpperCase()];
+  return hit ? { name:hit, code:code.trim() } : { name:'', code:code.trim() };
+}
+
+/* ===== base64url (UTF-8 safe) ===== */
+function b64urlEncode(str){ return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function b64urlDecode(s){ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; return decodeURIComponent(escape(atob(s))); }
+function readPayload(){
+  let h=(location.hash||'').replace(/^#/,'').trim();
+  if(h){ try{ const o=JSON.parse(b64urlDecode(h)); if(o&&typeof o==='object'&&(o.ep||o.to)) return o; }catch(e){} }
+  const q=new URLSearchParams(location.search);
+  if(q.get('ep')||q.get('to')) return { n:q.get('n')||'', ep:q.get('ep')||'', to:q.get('to')||'' };
+  return null;
+}
+
+const $=(s,r=document)=>r.querySelector(s);
+function el(t,c,h){ const e=document.createElement(t); if(c)e.className=c; if(h!=null)e.innerHTML=h; return e; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+let toastT;
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1800); }
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){ try{ const ta=el('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); const ok=document.execCommand('copy'); ta.remove(); return ok; }catch(e2){ return false; } }
+}
+
+/* ===== device detection ===== */
+const NA='לא זמין במכשיר זה';
+function getGPU(){
+  try{ const c=document.createElement('canvas'); const gl=c.getContext('webgl')||c.getContext('experimental-webgl'); if(!gl)return '';
+    const dbg=gl.getExtension('WEBGL_debug_renderer_info'); let r=dbg?gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+    return (r||'').toString().replace(/\s*\([^)]*\)\s*$/,'').trim();
+  }catch(e){ return ''; }
+}
+function parseOS(ua,h){
+  if(/\b(iPhone|iPad|iPod)\b/.test(ua)){ const m=ua.match(/OS (\d+)[_.](\d+)/); const k=/iPad/.test(ua)?'iPadOS':'iOS'; return k+(m?' '+m[1]+'.'+m[2]:''); }
+  if(h&&h.platform==='Android') return 'Android'+(h.platformVersion?' '+h.platformVersion.split('.')[0]:'');
+  const am=ua.match(/Android (\d+(?:\.\d+)?)/); if(am) return 'Android '+am[1];
+  if(h&&h.platform==='Windows'){ let v=h.platformVersion?parseInt(h.platformVersion.split('.')[0],10):0; return 'Windows '+(v>=13?'11':v>0?'10':''); }
+  if(/Windows NT 10/.test(ua)) return 'Windows 10/11';
+  if(/Windows/.test(ua)) return 'Windows';
+  if(/Mac OS X (\d+[_.]\d+)/.test(ua)){ const m=ua.match(/Mac OS X (\d+)[_.](\d+)/); return 'macOS '+m[1]+'.'+m[2]; }
+  if(/Mac/.test(ua)) return 'macOS';
+  if(/CrOS/.test(ua)) return 'ChromeOS';
+  if(/Linux/.test(ua)) return 'Linux';
+  return ua.split(')')[0].split('(')[1]||'לא ידוע';
+}
+function parseBrowser(ua,h){
+  if(h&&Array.isArray(h.fullVersionList)){
+    const p=h.fullVersionList.find(b=>!/Not.?A.?Brand/i.test(b.brand)&&!/Chromium/i.test(b.brand))||h.fullVersionList.find(b=>!/Not.?A.?Brand/i.test(b.brand));
+    if(p) return p.brand+' '+(p.version||'').split('.')[0];
+  }
+  let m;
+  if((m=ua.match(/EdgA?\/(\d+)/))) return 'Edge '+m[1];
+  if((m=ua.match(/SamsungBrowser\/(\d+)/))) return 'Samsung Internet '+m[1];
+  if((m=ua.match(/OPR\/(\d+)/))) return 'Opera '+m[1];
+  if((m=ua.match(/FxiOS\/(\d+)/))) return 'Firefox '+m[1];
+  if((m=ua.match(/Firefox\/(\d+)/))) return 'Firefox '+m[1];
+  if((m=ua.match(/CriOS\/(\d+)/))) return 'Chrome '+m[1];
+  if((m=ua.match(/Chrome\/(\d+)/))) return 'Chrome '+m[1];
+  if(/Safari/.test(ua)&&(m=ua.match(/Version\/(\d+)/))) return 'Safari '+m[1];
+  return 'דפדפן לא מזוהה';
+}
+async function detect(){
+  const nav=navigator, ua=nav.userAgent||'';
+  let h=null;
+  if(nav.userAgentData&&nav.userAgentData.getHighEntropyValues){
+    try{ h=await nav.userAgentData.getHighEntropyValues(['model','platformVersion','platform','architecture','bitness','fullVersionList']); }catch(e){}
+  }
+  const os=parseOS(ua,h), browser=parseBrowser(ua,h);
+  const rawModel=(h&&h.model)?h.model:'';
+  const pm=prettyModel(rawModel);
+  const isApple=/\b(iPhone|iPad|iPod)\b/.test(ua)||(/Mac/.test(ua)&&'ontouchend' in document);
+  const ram=(typeof nav.deviceMemory==='number')?nav.deviceMemory:null;
+  const cores=(typeof nav.hardwareConcurrency==='number')?nav.hardwareConcurrency:null;
+  const dpr=window.devicePixelRatio||1, sw=screen.width, sh=screen.height;
+  const pxW=Math.round(sw*dpr), pxH=Math.round(sh*dpr);
+  const gpu=getGPU();
+  const type=(h&&h.mobile)||/Mobi|Android|iPhone|iPod/.test(ua)?'טלפון/נייד':/iPad|Tablet/.test(ua)?'טאבלט':'מחשב';
+
+  // model display value: pretty name (name) + code after, or code alone, or apple note
+  let modelDisplayName, modelDisplaySub='';
+  if(pm.name){ modelDisplayName=pm.name; modelDisplaySub=pm.code; }
+  else if(pm.code){ modelDisplayName=pm.code; }
+  else { modelDisplayName=isApple?'אפל לא חושפת דגם':NA; }
+  const modelForText = pm.name ? (pm.name+' ('+pm.code+')') : (pm.code || (isApple?'לא נחשף':'לא נחשף'));
+  const ramText = ram ? (ram>=8?'8GB ומעלה':ram+'GB') : (isApple?'לא נחשף (אייפון)':'לא נחשף');
+
+  const fields=[];
+  fields.push(['סוג מכשיר', type, false, '']);
+  fields.push(['דגם', modelDisplayName, !(pm.name||pm.code), modelDisplaySub]);
+  fields.push(['מערכת הפעלה', os, false, '']);
+  fields.push(['דפדפן', browser, false, '']);
+  fields.push(['זיכרון RAM', ram?(ram>=8?'8GB ומעלה':ram+'GB'):(isApple?'אפל לא חושפת זיכרון':NA), !ram, '']);
+  fields.push(['מעבד · ליבות', cores?cores+' ליבות':NA, !cores, '']);
+  fields.push(['מסך', pxW+'×'+pxH+' · צפיפות ×'+(Math.round(dpr*10)/10), false, '']);
+  if(gpu) fields.push(['כרטיס מסך', gpu, false, '']);
+
+  // flat record for sheet/whatsapp
+  const rec={
+    type, model: pm.name||pm.code||'', modelcode: pm.code||'',
+    os, browser, ram: ramText, cores: cores?String(cores):'לא נחשף',
+    screen: pxW+'×'+pxH+' (×'+(Math.round(dpr*10)/10)+')', gpu: gpu||''
+  };
+  const msg=[['סוג מכשיר',type]];
+  msg.push(['דגם', modelForText]);
+  msg.push(['מערכת הפעלה',os]); msg.push(['דפדפן',browser]);
+  msg.push(['זיכרון RAM',ramText]); msg.push(['מעבד · ליבות',cores?String(cores):'לא נחשף']);
+  msg.push(['מסך', rec.screen]); if(gpu) msg.push(['כרטיס מסך',gpu]);
+
+  return { fields, rec, msg };
+}
+
+/* ===== Google Sheet endpoint: check-if-done (JSONP) + submit (single image GET) ===== */
+function checkClosed(ep, key){
+  return new Promise(function(resolve){
+    if(!key){ resolve(false); return; }
+    const cb='__cc'+Math.random().toString(36).slice(2);
+    let done=false, s=null;
+    function cleanup(){ try{ delete window[cb]; }catch(e){} if(s&&s.parentNode) s.parentNode.removeChild(s); }
+    const timer=setTimeout(function(){ if(!done){ done=true; cleanup(); resolve(false); } }, 5000); // fail-open
+    window[cb]=function(res){ if(done) return; done=true; clearTimeout(timer); cleanup(); resolve(!!(res&&res.closed)); };
+    s=document.createElement('script');
+    s.onerror=function(){ if(done) return; done=true; clearTimeout(timer); cleanup(); resolve(false); }; // fail-open
+    s.src=ep+(ep.indexOf('?')>-1?'&':'?')+'action=check&key='+encodeURIComponent(key)+'&callback='+cb+'&_t='+Date.now();
+    document.body.appendChild(s);
+  });
+}
+function sendToSheet(ep, name, rec){
+  return new Promise(function(resolve){
+    try{
+      const data=Object.assign({ name:name||'' }, rec);
+      const qs=new URLSearchParams(data).toString();
+      const img=new Image();
+      img.onload=img.onerror=function(){ resolve(); };
+      img.src=ep+(ep.indexOf('?')>-1?'&':'?')+qs+'&_t='+Date.now();
+      setTimeout(resolve, 3500);
+    }catch(e){ resolve(); }
+  });
+}
+
+/* ===== WhatsApp fallback ===== */
+function digitsOnly(s){ return (s||'').replace(/[^\d]/g,''); }
+function waLink(number,text){ return 'https://wa.me/'+digitsOnly(number)+'?text='+encodeURIComponent(text); }
+function buildMessage(name,pairs){
+  const now=new Date();
+  const dt=now.toLocaleDateString('he-IL')+' '+now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+  const lines=['פרטי מכשיר — '+(name||'נהג'),''];
+  pairs.forEach(([k,v])=>lines.push(k+': '+v));
+  lines.push(''); lines.push('נשלח: '+dt);
+  return lines.join('\n');
+}
+
+/* ===== icons ===== */
+const I_WA='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2zm0 1.67c2.2 0 4.27.86 5.82 2.42a8.19 8.19 0 0 1 2.42 5.82c0 4.54-3.7 8.23-8.24 8.23-1.48 0-2.93-.4-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23zm4.71 10.3c-.07-.11-.26-.18-.54-.32-.28-.14-1.65-.81-1.9-.9-.26-.1-.44-.14-.63.14-.18.28-.72.9-.88 1.09-.16.18-.33.21-.6.07-.28-.14-1.17-.43-2.23-1.38-.82-.73-1.38-1.64-1.54-1.92-.16-.28-.02-.43.12-.57.13-.12.28-.33.42-.49.14-.16.18-.28.28-.47.09-.18.05-.35-.02-.49-.07-.14-.63-1.51-.86-2.07-.23-.55-.46-.47-.63-.48l-.54-.01c-.18 0-.49.07-.74.35-.26.28-.97.95-.97 2.32s1 2.69 1.14 2.88c.14.18 1.96 3 4.75 4.2.66.29 1.18.46 1.58.59.66.21 1.27.18 1.75.11.53-.08 1.65-.67 1.88-1.32.23-.65.23-1.2.16-1.32z"/></svg>';
+const I_CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+const I_SHIELD='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+const I_LINK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>';
+const I_EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+/* ===== DRIVER VIEW ===== */
+function setBrand(txt){ const b=$('#brandtx'); if(b) b.innerHTML=txt; }
+
+function renderDeadLink(){
+  setBrand('קישור לא פעיל');
+  const app=$('#app'); app.innerHTML='';
+  const card=el('div','card result');
+  card.appendChild(el('div','err404','404'));
+  card.appendChild(el('h1','result-h','הקישור אינו פעיל'));
+  card.appendChild(el('p','result-p','הקישור הזה כבר אינו בתוקף.<br>אם התבקשת לבצע בדיקה, בקש מהמנהל קישור חדש.'));
+  app.appendChild(card);
+}
+
+async function renderDriver(payload){
+  // קישורים נושאים חותמת גרסה — כל קישור ישן (בלי החותמת הנוכחית) הוא "מת" ומציג 404
+  if((payload.v||'') !== LINK_VERSION){ renderDeadLink(); return; }
+
+  const name=(payload.n||'').trim();
+  const phone=(payload.ph||'').trim();
+  const ep=(payload.ep||'').trim();
+  const number=(payload.to||'').trim();
+  const app=$('#app'); app.innerHTML='';
+
+  if(ep){
+    // ---- auto mode: check if already done; otherwise collect, send, show success ----
+    setBrand('בדיקת חיבור');
+    const card=el('div','card result');
+    card.appendChild(el('div','checking','<span class="spin big"></span><div class="checking-tx">בודק חיבור…</div>'));
+    app.appendChild(card);
+
+    // identify this driver (phone digits, or name) and check if the link was already used
+    const rawId=(phone||payload.n||'');
+    const key=((rawId.match(/\d/g)||[]).join('')) || (payload.n||'').trim();
+    let closed=false;
+    try{ closed=await checkClosed(ep,key); }catch(e){}
+
+    if(closed){
+      card.innerHTML='';
+      card.appendChild(el('div','result-ic info', I_CHECK));
+      card.appendChild(el('h1','result-h','הבדיקה כבר בוצעה'));
+      card.appendChild(el('p','result-p','הקישור הזה כבר נוצל, אין צורך בפעולה נוספת.<br>אפשר לסגור את הדף.'));
+      return;
+    }
+
+    let data=null;
+    try{ data=await detect(); }catch(e){}
+    if(data){
+      const rec=Object.assign({ phone: phone }, data.rec);
+      try{ await sendToSheet(ep, name, rec); }catch(e){}
+    }
+
+    card.innerHTML='';
+    card.appendChild(el('div','result-ic', I_CHECK));
+    card.appendChild(el('h1','result-h','הבדיקה עברה בהצלחה'));
+    card.appendChild(el('p','result-p', 'אין בעיה בגישה לאינטרנט'+(name?', תודה '+esc(name):'')+'.<br>אפשר לסגור את הדף.'));
+    return;
+  }
+
+  // ---- whatsapp fallback (no endpoint) ----
+  setBrand('בדיקת מכשירי נהגים · <b>הסידור</b>');
+  const card=el('div','card');
+  card.appendChild(el('h1',null, name?'שלום '+esc(name)+',':'שלום,'));
+  card.appendChild(el('p','lead','כדי לבדוק שהמכשיר שלך מתאים לאפליקציה, אנחנו רושמים כמה פרטים טכניים בסיסיים. <b>אתה רואה בדיוק מה נשלח, ושום דבר לא נשלח עד שתלחץ.</b>'));
+  const status=el('div','status','<span class="spin"></span><span>בודק את פרטי המכשיר…</span>');
+  card.appendChild(status);
+  const fieldsBox=el('div','fields'); fieldsBox.hidden=true; card.appendChild(fieldsBox);
+  const action=el('div'); action.hidden=true; card.appendChild(action);
+  card.appendChild(el('p','note', I_SHIELD+'<span>הפרטים שנרשמים הם רק אלה שמוצגים למעלה.</span>'));
+  app.appendChild(card);
+
+  let data;
+  try{ data=await detect(); }
+  catch(e){ status.innerHTML='<span>לא ניתן היה לקרוא את פרטי המכשיר. נסה לרענן.</span>'; return; }
+  data.fields.forEach(([k,v,dim,sub])=>{
+    const r=el('div','row'); r.appendChild(el('span','k',esc(k)));
+    r.appendChild(el('span','v'+(dim?' dim':''), esc(v)+(sub?'<span class="sub">'+esc(sub)+'</span>':''))); fieldsBox.appendChild(r);
+  });
+  fieldsBox.hidden=false;
+
+  if(number){
+    status.hidden=true;
+    const prev=el('div','preview-wrap');
+    prev.appendChild(el('div','preview-label', I_EYE+'<span>זו ההודעה שתישלח</span>'));
+    const pbox=el('div','preview');
+    const msgPairs=(phone?[['טלפון הנהג',phone]]:[]).concat(data.msg);
+    const message=buildMessage(name,msgPairs); pbox.textContent=message; prev.appendChild(pbox);
+    action.appendChild(prev);
+    const btn=document.createElement('a'); btn.className='btn wa'; btn.href=waLink(number,message); btn.target='_blank'; btn.rel='noopener';
+    btn.innerHTML=I_WA+'<span>שלח את הפרטים בוואטסאפ</span>';
+    btn.addEventListener('click',()=>{ setTimeout(()=>{ btn.innerHTML=I_WA+'<span>נפתח וואטסאפ — לחץ שם שליחה</span>'; },400); });
+    action.appendChild(btn); action.hidden=false;
+  } else {
+    status.innerHTML='<span>הקישור חסר יעד. פנה למנהל לקישור מעודכן.</span>';
+  }
+}
+
+/* ===== MANAGER VIEW ===== */
+const STORE_KEY='driverchk.v3';
+function loadStore(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{}; }catch(e){ return {}; } }
+function saveStore(o){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(o)); }catch(e){} }
+function baseUrl(){ return location.origin+location.pathname; }
+function parseDrivers(text){
+  return (text||'').split('\n').map(line=>{
+    line=line.trim(); if(!line) return null;
+    const parts=line.split(/[,\t;]/);
+    const name=(parts[0]||'').trim();
+    const phone=(parts[1]||'').trim();
+    return name ? { name, phone } : null;
+  }).filter(Boolean);
+}
+function driverUrl(d, ep, number){
+  const p={ v:LINK_VERSION, n:d.name }; if(d.phone) p.ph=d.phone; if(ep) p.ep=ep; if(number) p.to=digitsOnly(number);
+  return baseUrl()+'#'+b64urlEncode(JSON.stringify(p));
+}
+function normalizeNumber(code,raw){
+  let d=digitsOnly(raw); const cc=digitsOnly(code)||'972'; if(!d) return '';
+  if(d.startsWith('00')) d=d.slice(2); else if(d.startsWith(cc)){} else if(d.startsWith('0')) d=cc+d.slice(1); else d=cc+d;
+  return d;
+}
+
+function renderManager(){
+  setBrand('בדיקת מכשירי נהגים · <b>הסידור</b>');
+  const app=$('#app'); const st=loadStore(); app.innerHTML='';
+
+  const card=el('div','card');
+  card.appendChild(el('h1',null,'הגדרת קישורים לנהגים'));
+  card.appendChild(el('p','lead','הדבק את קישור הטבלה (Google Apps Script), הזן לכל נהג שם וטלפון, וקבל קישור מוכן. כשהוא יפתח — השם, הטלפון ופרטי המכשיר נכנסים לטבלה אוטומטית, בלי שום לחיצה.'));
+
+  // endpoint
+  const epWrap=el('label','fl');
+  epWrap.appendChild(el('span',null,'קישור הטבלה האוטומטית <span class="hint">(כתובת ה־Web app של Google Apps Script, מסתיימת ב־/exec)</span>'));
+  const epInp=el('input'); epInp.type='url'; epInp.placeholder='https://script.google.com/macros/s/.../exec'; epInp.value=st.ep||'';
+  epWrap.appendChild(epInp);
+  const epState=el('div','normalized'); epWrap.appendChild(epState);
+  card.appendChild(epWrap);
+
+  // drivers: name + phone per line
+  const namesWrap=el('label','fl');
+  namesWrap.appendChild(el('span',null,'נהגים <span class="hint">(בכל שורה: שם, טלפון — לדוגמה: דני, 050-1234567)</span>'));
+  const namesTa=el('textarea'); namesTa.placeholder='דני, 050-1234567\nמוחמד, 052-9876543\nיוסי, 053-7654321'; namesTa.value=st.driversText||'';
+  namesWrap.appendChild(namesTa);
+  card.appendChild(namesWrap);
+
+  // whatsapp (optional backup)
+  const numWrap=el('label','fl');
+  numWrap.appendChild(el('span',null,'מספר וואטסאפ שלך לגיבוי <span class="hint">(לא חובה — משמש רק אם אין קישור טבלה)</span>'));
+  const cc=el('div','cc');
+  const codeInp=el('input'); codeInp.type='tel'; codeInp.className='code'; codeInp.placeholder='972'; codeInp.value=st.code||'972';
+  const numInp=el('input'); numInp.type='tel'; numInp.placeholder='050-123-4567'; numInp.value=st.rawNumber||'';
+  cc.appendChild(codeInp); cc.appendChild(numInp); numWrap.appendChild(cc);
+  const norm=el('div','normalized'); numWrap.appendChild(norm);
+  card.appendChild(numWrap);
+
+  const gen=el('button','btn primary', I_LINK+'<span>צור קישורים</span>');
+  card.appendChild(gen);
+  app.appendChild(card);
+
+  const results=el('div','card'); results.id='results'; app.appendChild(results);
+
+  const foot=el('div','foot');
+  const back=el('button','link','תצוגה מקדימה: מה נהג רואה');
+  back.onclick=()=>{
+    const ep=epInp.value.trim(); const number=normalizeNumber(codeInp.value,numInp.value);
+    if(!ep && !number){ toast('הזן קישור טבלה או מספר וואטסאפ'); epInp.focus(); return; }
+    const p={ v:LINK_VERSION, n:'דני (דוגמה)', ph:'050-0000000' }; if(ep)p.ep=ep; if(number)p.to=number;
+    location.hash=b64urlEncode(JSON.stringify(p)); boot();
+  };
+  foot.appendChild(back); app.appendChild(foot);
+
+  function updateEpState(){
+    const v=epInp.value.trim();
+    epState.innerHTML = v ? (/\/exec\b/.test(v)?'<span class="badge on">✓ טבלה אוטומטית פעילה</span>':'<span class="badge off">הכתובת אמורה להסתיים ב־/exec</span>') : '<span class="badge off">ללא טבלה — ייעשה שימוש בוואטסאפ</span>';
+  }
+  function updateNorm(){ const n=normalizeNumber(codeInp.value,numInp.value); norm.innerHTML = n?'גיבוי יישלח אל: <b>+'+n+'</b>':''; }
+  epInp.addEventListener('input',updateEpState); codeInp.addEventListener('input',updateNorm); numInp.addEventListener('input',updateNorm);
+  updateEpState(); updateNorm();
+
+  function persist(){ saveStore({ ep:epInp.value.trim(), code:codeInp.value.trim(), rawNumber:numInp.value.trim(), driversText:namesTa.value }); }
+
+  function renderResults(){
+    const ep=epInp.value.trim(); const number=normalizeNumber(codeInp.value,numInp.value);
+    const drivers=parseDrivers(namesTa.value);
+    results.innerHTML='';
+    if(!ep && !number){ results.appendChild(el('div','empty','הדבק קישור טבלה (מומלץ) או הזן מספר וואטסאפ כדי ליצור קישורים.')); return; }
+    if(!drivers.length){ results.appendChild(el('div','empty','הוסף לפחות נהג אחד (שם, טלפון).')); return; }
+
+    const head=el('div','links-head');
+    head.appendChild(el('h2',null,'קישורים מוכנים ('+drivers.length+')'));
+    const copyAll=el('button','btn ghost sm','העתק הכל');
+    copyAll.onclick=async ()=>{ const all=drivers.map(d=> d.name+(d.phone?' ('+d.phone+')':'')+': '+driverUrl(d,ep,number)).join('\n'); toast(await copyText(all)?'כל הקישורים הועתקו':'ההעתקה נכשלה'); };
+    head.appendChild(copyAll); results.appendChild(head);
+
+    const mode=el('p','note', (ep?I_CHECK:I_WA)+'<span>'+(ep?'מצב טבלה אוטומטית: כל נהג שיפתח — השם, הטלפון ופרטי המכשיר נכנסים לטבלה לבד.':'מצב וואטסאפ: הנהג ילחץ כדי לשלוח לך הודעה.')+'</span>');
+    results.appendChild(mode);
+
+    drivers.forEach(d=>{
+      const url=driverUrl(d,ep,number);
+      const row=el('div','driver');
+      row.appendChild(el('div','dn', esc(d.name)+(d.phone?'<span class="dn-ph"> · '+esc(d.phone)+'</span>':'')));
+      row.appendChild(el('div','url',esc(url)));
+      const acts=el('div','acts');
+      const cp=el('button','btn ghost sm','העתק קישור');
+      cp.onclick=async ()=>{ toast(await copyText(url)?'הקישור של '+d.name+' הועתק':'ההעתקה נכשלה'); };
+      const open=document.createElement('a'); open.className='btn ghost sm'; open.href=url; open.target='_blank'; open.rel='noopener'; open.textContent='פתח לבדיקה';
+      acts.appendChild(cp); acts.appendChild(open); row.appendChild(acts);
+      results.appendChild(row);
+    });
+  }
+
+  gen.onclick=()=>{ persist(); renderResults(); };
+  [epInp,namesTa,codeInp,numInp].forEach(i=>i.addEventListener('input',persist));
+
+  if((st.ep||st.rawNumber) && parseDrivers(st.driversText).length) renderResults();
+  else results.appendChild(el('div','empty','מלא את הפרטים למעלה ולחץ “צור קישורים”.'));
+}
+
+function boot(){ const p=readPayload(); if(p) renderDriver(p); else renderManager(); }
+window.addEventListener('hashchange',boot);
+boot();
+</script>
+</body>
+</html>
