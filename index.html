@@ -80,6 +80,7 @@
   .result{align-items:center; text-align:center; gap:15px; padding:40px 26px 42px}
   .result-ic{width:84px; height:84px; border-radius:50%; background:var(--ok); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 26px rgba(26,127,90,.32)}
   .result-ic svg{width:44px; height:44px}
+  .result-ic.info{background:var(--muted); box-shadow:none}
   .result-h{font-size:1.7rem}
   .result-p{color:var(--muted); font-size:1.06rem; margin:0; line-height:1.6}
 
@@ -277,23 +278,32 @@ async function detect(){
   return { fields, rec, msg };
 }
 
-/* ===== send to Google Sheet endpoint (fire-and-forget) ===== */
+/* ===== Google Sheet endpoint: check-if-done (JSONP) + submit (single image GET) ===== */
+function checkClosed(ep, key){
+  return new Promise(function(resolve){
+    if(!key){ resolve(false); return; }
+    const cb='__cc'+Math.random().toString(36).slice(2);
+    let done=false, s=null;
+    function cleanup(){ try{ delete window[cb]; }catch(e){} if(s&&s.parentNode) s.parentNode.removeChild(s); }
+    const timer=setTimeout(function(){ if(!done){ done=true; cleanup(); resolve(false); } }, 5000); // fail-open
+    window[cb]=function(res){ if(done) return; done=true; clearTimeout(timer); cleanup(); resolve(!!(res&&res.closed)); };
+    s=document.createElement('script');
+    s.onerror=function(){ if(done) return; done=true; clearTimeout(timer); cleanup(); resolve(false); }; // fail-open
+    s.src=ep+(ep.indexOf('?')>-1?'&':'?')+'action=check&key='+encodeURIComponent(key)+'&callback='+cb+'&_t='+Date.now();
+    document.body.appendChild(s);
+  });
+}
 function sendToSheet(ep, name, rec){
-  const data = Object.assign({ name: name||'' }, rec);
-  // primary: POST form-urlencoded, no-cors (no preflight, row still writes server-side)
-  let posted=false;
-  try{
-    const body=new URLSearchParams();
-    Object.keys(data).forEach(k=>body.append(k, data[k]==null?'':String(data[k])));
-    posted = fetch(ep, { method:'POST', mode:'no-cors', body }).then(()=>true).catch(()=>false);
-  }catch(e){ posted=Promise.resolve(false); }
-  // backup beacon via image GET (covers rare fetch failures)
-  try{
-    const qs=new URLSearchParams(data).toString();
-    const img=new Image();
-    img.src = ep + (ep.indexOf('?')>-1?'&':'?') + qs + '&_t=' + Date.now();
-  }catch(e){}
-  return Promise.resolve(posted);
+  return new Promise(function(resolve){
+    try{
+      const data=Object.assign({ name:name||'' }, rec);
+      const qs=new URLSearchParams(data).toString();
+      const img=new Image();
+      img.onload=img.onerror=function(){ resolve(); };
+      img.src=ep+(ep.indexOf('?')>-1?'&':'?')+qs+'&_t='+Date.now();
+      setTimeout(resolve, 3500);
+    }catch(e){ resolve(); }
+  });
 }
 
 /* ===== WhatsApp fallback ===== */
@@ -326,11 +336,25 @@ async function renderDriver(payload){
   const app=$('#app'); app.innerHTML='';
 
   if(ep){
-    // ---- auto mode: collect silently, send, show a clean success screen ----
+    // ---- auto mode: check if already done; otherwise collect, send, show success ----
     setBrand('בדיקת חיבור');
     const card=el('div','card result');
     card.appendChild(el('div','checking','<span class="spin big"></span><div class="checking-tx">בודק חיבור…</div>'));
     app.appendChild(card);
+
+    // identify this driver (phone digits, or name) and check if the link was already used
+    const rawId=(phone||payload.n||'');
+    const key=((rawId.match(/\d/g)||[]).join('')) || (payload.n||'').trim();
+    let closed=false;
+    try{ closed=await checkClosed(ep,key); }catch(e){}
+
+    if(closed){
+      card.innerHTML='';
+      card.appendChild(el('div','result-ic info', I_CHECK));
+      card.appendChild(el('h1','result-h','הבדיקה כבר בוצעה'));
+      card.appendChild(el('p','result-p','הקישור הזה כבר נוצל, אין צורך בפעולה נוספת.<br>אפשר לסגור את הדף.'));
+      return;
+    }
 
     let data=null;
     try{ data=await detect(); }catch(e){}
